@@ -1,0 +1,40 @@
+name: Pubblica i post in coda
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # rete di sicurezza: ogni 10 minuti (GitHub può ritardare)
+  workflow_dispatch:          # avvio puntuale: lo lancia la "sveglia" su Cloudflare
+
+concurrency:
+  group: pubblicazione
+  cancel-in-progress: false
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # ref: main → scarica la coda com'è ADESSO, non com'era quando il run è stato
+      # messo in fila: così due run consecutivi non pubblicano due volte lo stesso post
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Pubblica ciò che ha raggiunto la sua ora
+        env:
+          META_PAGE_TOKEN: ${{ secrets.META_PAGE_TOKEN }}
+          META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+          META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
+        run: python3 publish_queued.py
+
+      - name: Sposta in pubblicati/ ciò che è uscito
+        if: always()
+        run: |
+          if [ -n "$(git status --porcelain coda pubblicati)" ]; then
+            git config user.name "studiorad-bot"
+            git config user.email "actions@github.com"
+            git add coda pubblicati
+            git commit -m "Pubblicati i post in scadenza"
+            git push
+          fi
